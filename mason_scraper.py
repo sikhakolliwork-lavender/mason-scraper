@@ -250,6 +250,31 @@ class MasonStoreScraper:
 
         return product
 
+    def _get_best_image_url(self, img_url: str) -> str:
+        """Get the best quality image URL by checking original vs sized versions."""
+        # Remove size suffix to get original URL
+        original_url = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', img_url)
+
+        if original_url == img_url:
+            # No size suffix found, already original
+            return img_url
+
+        # Check sizes of both versions
+        try:
+            orig_resp = self.session.head(original_url, timeout=5)
+            sized_resp = self.session.head(img_url, timeout=5)
+
+            orig_size = int(orig_resp.headers.get('Content-Length', 0))
+            sized_size = int(sized_resp.headers.get('Content-Length', 0))
+
+            # Return the larger one
+            if orig_size > sized_size and orig_resp.status_code == 200:
+                return original_url
+        except Exception:
+            pass
+
+        return img_url
+
     async def download_image(self, session: aiohttp.ClientSession, url: str, filepath: Path) -> bool:
         """Download a single image."""
         try:
@@ -277,14 +302,17 @@ class MasonStoreScraper:
                 product["local_images"] = []
 
                 for idx, img_url in enumerate(product.get("image_urls", [])):
-                    ext = Path(img_url).suffix or ".jpg"
+                    # Get best quality image URL
+                    best_url = self._get_best_image_url(img_url)
+
+                    ext = Path(best_url).suffix or ".jpg"
                     ext = ext.split("?")[0]  # Remove query params
                     filename = f"{product_id}_{idx + 1}{ext}"
                     filepath = self.output_dir / "images" / filename
 
                     if not filepath.exists():
                         tasks.append((
-                            download_with_semaphore(session, img_url, filepath),
+                            download_with_semaphore(session, best_url, filepath),
                             product,
                             filename
                         ))
