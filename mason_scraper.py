@@ -250,30 +250,39 @@ class MasonStoreScraper:
 
         return product
 
-    def _get_best_image_url(self, img_url: str) -> str:
-        """Get the best quality image URL by checking original vs sized versions."""
-        # Remove size suffix to get original URL
-        original_url = re.sub(r'-\d+x\d+(\.\w+)$', r'\1', img_url)
+    def _get_all_image_variations(self, img_url: str) -> list:
+        """Get all available image variations (original, 800x800, 400x400)."""
+        variations = []
 
-        if original_url == img_url:
-            # No size suffix found, already original
-            return img_url
+        # Extract base name and extension
+        # e.g., "aianna-1-800x800.jpg" -> base="aianna-1", ext=".jpg"
+        match = re.match(r'(.+?)(-\d+x\d+)?(\.\w+)$', img_url.split('/')[-1])
+        if not match:
+            return [(img_url, 'original')]
 
-        # Check sizes of both versions
-        try:
-            orig_resp = self.session.head(original_url, timeout=5)
-            sized_resp = self.session.head(img_url, timeout=5)
+        base_name = match.group(1)
+        ext = match.group(3)
+        base_url = img_url.rsplit('/', 1)[0]
 
-            orig_size = int(orig_resp.headers.get('Content-Length', 0))
-            sized_size = int(sized_resp.headers.get('Content-Length', 0))
+        # Define variations to try
+        variation_suffixes = [
+            ('', 'original'),
+            ('-800x800', '800x800'),
+            ('-400x400', '400x400'),
+        ]
 
-            # Return the larger one
-            if orig_size > sized_size and orig_resp.status_code == 200:
-                return original_url
-        except Exception:
-            pass
+        for suffix, label in variation_suffixes:
+            var_url = f"{base_url}/{base_name}{suffix}{ext}"
+            try:
+                resp = self.session.head(var_url, timeout=5)
+                if resp.status_code == 200:
+                    size = int(resp.headers.get('Content-Length', 0))
+                    if size > 0:
+                        variations.append((var_url, label, size))
+            except Exception:
+                pass
 
-        return img_url
+        return variations
 
     async def download_image(self, session: aiohttp.ClientSession, url: str, filepath: Path) -> bool:
         """Download a single image."""
@@ -288,7 +297,7 @@ class MasonStoreScraper:
         return False
 
     async def download_all_images(self, products: list):
-        """Download all images for products."""
+        """Download all image variations for products."""
         semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
 
         async def download_with_semaphore(session, url, filepath):
@@ -302,22 +311,23 @@ class MasonStoreScraper:
                 product["local_images"] = []
 
                 for idx, img_url in enumerate(product.get("image_urls", [])):
-                    # Get best quality image URL
-                    best_url = self._get_best_image_url(img_url)
+                    # Get all available variations
+                    variations = self._get_all_image_variations(img_url)
 
-                    ext = Path(best_url).suffix or ".jpg"
-                    ext = ext.split("?")[0]  # Remove query params
-                    filename = f"{product_id}_{idx + 1}{ext}"
-                    filepath = self.output_dir / "images" / filename
+                    for var_url, var_label, var_size in variations:
+                        ext = Path(var_url).suffix or ".jpg"
+                        ext = ext.split("?")[0]  # Remove query params
+                        filename = f"{product_id}_{idx + 1}_{var_label}{ext}"
+                        filepath = self.output_dir / "images" / filename
 
-                    if not filepath.exists():
-                        tasks.append((
-                            download_with_semaphore(session, best_url, filepath),
-                            product,
-                            filename
-                        ))
-                    else:
-                        product["local_images"].append(str(filepath))
+                        if not filepath.exists():
+                            tasks.append((
+                                download_with_semaphore(session, var_url, filepath),
+                                product,
+                                filename
+                            ))
+                        else:
+                            product["local_images"].append(str(filepath))
 
             # Execute downloads with progress bar
             if tasks:
