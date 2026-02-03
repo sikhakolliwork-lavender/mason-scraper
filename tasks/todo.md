@@ -8,31 +8,31 @@
 - [x] Create `.claude/` folder for tracking
 - [x] Create `tasks/todo.md` with this task list
 - [x] Create `requirements.txt` with dependencies
-- [ ] Create initial commit and push to GitHub
+- [x] Create initial commit and push to GitHub
 
 ## Phase 2: Core Scraper
-- [ ] Create `mason_scraper.py` with basic structure
-- [ ] Implement `get_total_pages()` function
-- [ ] Implement `scrape_listing_page()` function
-- [ ] Implement `scrape_product_detail()` function
-- [ ] Add rate limiting (1 sec delay between requests)
-- [ ] Test with first 2 pages
+- [x] Create `mason_scraper.py` with basic structure
+- [x] Implement `get_total_pages()` function
+- [x] Implement `scrape_listing_page()` function
+- [x] Implement `scrape_product_detail()` function
+- [x] Add rate limiting (1 sec delay between requests)
+- [x] Test with first 2 pages
 
 ## Phase 3: Data Export
-- [ ] Implement `export_json()` function
-- [ ] Implement `export_csv()` function
-- [ ] Test exports with sample data
+- [x] Implement `export_json()` function
+- [x] Implement `export_csv()` function
+- [x] Test exports with sample data
 
 ## Phase 4: Image Downloads
-- [ ] Implement async `download_image()` function
-- [ ] Implement `download_all_images()` with semaphore
-- [ ] Test with 10 sample images
+- [x] Implement async `download_image()` function
+- [x] Implement `download_all_images()` with semaphore
+- [x] Test with 10 sample images
 
 ## Phase 5: Resume & Progress
-- [ ] Implement `save_progress()` function
-- [ ] Implement `load_progress()` function
-- [ ] Add Ctrl+C handler to save on interrupt
-- [ ] Test resume functionality
+- [x] Implement `save_progress()` function
+- [x] Implement `load_progress()` function
+- [x] Add Ctrl+C handler to save on interrupt
+- [x] Test resume functionality
 
 ## Phase 6: Final Testing
 - [ ] Run full scrape (all 139 pages)
