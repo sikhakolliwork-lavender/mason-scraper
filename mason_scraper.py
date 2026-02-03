@@ -183,27 +183,105 @@ class MasonStoreScraper:
             soup = self._fetch_page(product["product_url"])
             product_id = product.get("id", "")
 
-            # SKU - look for text containing "SKU"
-            sku_text = soup.find(string=re.compile(r"SKU\s*:?\s*\d+", re.I))
-            if sku_text:
-                match = re.search(r"SKU\s*:?\s*(\d+)", sku_text, re.I)
-                if match:
-                    product["sku"] = match.group(1)
+            # Title - from h2.title-detail
+            title_elem = soup.select_one("h2.title-detail")
+            if title_elem:
+                product["name"] = title_elem.get_text(strip=True)
 
-            # Brand - look for link to /brands/ page
+            # Prices - current and original
+            current_price = soup.select_one(".current-price")
+            if current_price:
+                product["price"] = self._parse_price(current_price.get_text())
+
+            old_price = soup.select_one(".old-price")
+            if old_price:
+                product["original_price"] = self._parse_price(old_price.get_text())
+
+            # SKU - from #product-sku .sku-text or hidden input
+            sku_elem = soup.select_one("#product-sku .sku-text")
+            if sku_elem:
+                sku_text = sku_elem.get_text(strip=True)
+                if sku_text and sku_text not in [":", ""]:
+                    product["sku"] = sku_text
+            # Fallback: try hidden input or product ID
+            if not product.get("sku"):
+                hidden_id = soup.select_one("input.hidden-product-id")
+                if hidden_id:
+                    product["sku"] = hidden_id.get("value")
+
+            # Brand - from link to /brands/
             brand_link = soup.select_one("a[href*='/brands/']")
             if brand_link:
                 product["brand"] = brand_link.get_text(strip=True)
 
-            # Description
-            desc_elem = soup.select_one(".description, .product-description, [class*='description']")
+            # Categories - from links in detail-info
+            categories = []
+            cat_links = soup.select(".detail-info a[href*='/product-categories/']")
+            for link in cat_links:
+                cat_name = link.get_text(strip=True)
+                if cat_name and cat_name not in categories:
+                    categories.append(cat_name)
+            if categories:
+                product["categories"] = categories
+
+            # Tags - from links in detail-info
+            tags = []
+            tag_links = soup.select(".detail-info a[href*='/product-tags/']")
+            for link in tag_links:
+                tag_name = link.get_text(strip=True)
+                if tag_name and tag_name not in tags:
+                    tags.append(tag_name)
+            if tags:
+                product["tags"] = tags
+
+            # Description - from tab content
+            desc_elem = soup.select_one(".tab-pane.active, .tab-content .tab-pane")
             if desc_elem:
-                product["description"] = desc_elem.get_text(strip=True)[:1000]
+                desc_text = desc_elem.get_text(strip=True)
+                if desc_text:
+                    product["description"] = desc_text[:2000]
 
-            # Product images - look for main product gallery
+            # Parse specifications from description (Key: Value patterns)
+            if product.get("description"):
+                specs = {}
+                desc = product["description"]
+
+                # Known specification keys to look for
+                known_keys = [
+                    "Material", "Brand", "Colour", "Color", "Product Dimensions",
+                    "Dimensions", "Exterior Finish", "Finish", "Handle Type",
+                    "Shape", "Special Feature", "Included Components", "Lock Type",
+                    "Type", "Size", "Weight", "Warranty", "Model", "Power",
+                    "Voltage", "Wattage", "Capacity", "Country of Origin"
+                ]
+
+                # Try to extract each known key
+                for key in known_keys:
+                    # Pattern: Key : Value or Key: Value (with possible space variations)
+                    pattern = rf'{re.escape(key)}\s*:\s*([^:]+?)(?=(?:{"|".join(re.escape(k) for k in known_keys)})\s*:|$)'
+                    match = re.search(pattern, desc, re.IGNORECASE)
+                    if match:
+                        value = match.group(1).strip()
+                        if value and len(value) < 100:
+                            specs[key] = value
+
+                if specs:
+                    product["specifications"] = specs
+
+            # Seller - from short-desc
+            seller_link = soup.select_one(".short-desc a[href*='/stores/']")
+            if seller_link:
+                product["seller"] = seller_link.get_text(strip=True)
+
+            # Availability / Stock status
+            stock_elem = soup.select_one(".number-items-available")
+            if stock_elem:
+                stock_text = stock_elem.get_text(strip=True).lower()
+                product["in_stock"] = "in stock" in stock_text
+                product["availability"] = stock_elem.get_text(strip=True)
+
+            # Product images - from detail-gallery
             product_images = []
-
-            # The main product images are in div.detail-gallery or div.product-image-slider
             gallery = soup.select_one("div.detail-gallery, div.product-image-slider")
             if gallery:
                 for img in gallery.select("img"):
@@ -211,39 +289,19 @@ class MasonStoreScraper:
                     if src and "/storage/products/" in src and "150x150" not in src:
                         product_images.append(urljoin(BASE_URL, src))
 
-            # Fallback: get first img with /storage/products/ that looks like main image
+            # Fallback for images
             if not product_images:
                 all_imgs = soup.select("img[src*='/storage/products/']")
-                for img in all_imgs[:5]:  # Check first 5 images
+                for img in all_imgs[:5]:
                     src = img.get("src") or img.get("data-src", "")
                     if src and "150x150" not in src:
                         img_name = src.split("/")[-1].lower()
-                        # Skip obvious non-product images
                         skip = ["icon", "logo", "banner", "placeholder"]
                         if not any(s in img_name for s in skip):
                             product_images.append(urljoin(BASE_URL, src))
-                            break  # Just take first valid one as fallback
+                            break
 
-            product["image_urls"] = list(dict.fromkeys(product_images))[:3]
-
-            # Specifications (if table exists)
-            specs = {}
-            spec_rows = soup.select("table tr, .specifications tr, [class*='spec'] tr")
-            for row in spec_rows:
-                cells = row.select("td, th")
-                if len(cells) >= 2:
-                    key = cells[0].get_text(strip=True)
-                    value = cells[1].get_text(strip=True)
-                    if key and value:
-                        specs[key] = value
-            if specs:
-                product["specifications"] = specs
-
-            # Stock status
-            stock_elem = soup.select_one(".stock, .availability, [class*='stock']")
-            if stock_elem:
-                stock_text = stock_elem.get_text(strip=True).lower()
-                product["in_stock"] = "out" not in stock_text
+            product["image_urls"] = list(dict.fromkeys(product_images))[:5]
 
         except Exception as e:
             logger.warning(f"Error fetching detail for {product.get('id')}: {e}")
