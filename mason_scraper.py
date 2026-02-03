@@ -200,29 +200,16 @@ class MasonStoreScraper:
             if desc_elem:
                 product["description"] = desc_elem.get_text(strip=True)[:1000]
 
-            # Product images - look for main product image
-            # Strategy: find images near the product title or in specific containers
+            # Product images - look for main product gallery
             product_images = []
 
-            # Try different selectors for main product image
-            main_img_selectors = [
-                "div.product-image img",
-                "div.product-gallery img",
-                ".woocommerce-product-gallery img",
-                "div[class*='gallery'] img",
-                "div[class*='product'] > img",
-                "main img[src*='/storage/products/']",
-            ]
-
-            for selector in main_img_selectors:
-                imgs = soup.select(selector)
-                if imgs:
-                    for img in imgs[:3]:  # Take first 3 from matching selector
-                        src = img.get("src") or img.get("data-src", "")
-                        if src and "/storage/products/" in src and "150x150" not in src:
-                            product_images.append(urljoin(BASE_URL, src))
-                    if product_images:
-                        break
+            # The main product images are in div.detail-gallery or div.product-image-slider
+            gallery = soup.select_one("div.detail-gallery, div.product-image-slider")
+            if gallery:
+                for img in gallery.select("img"):
+                    src = img.get("src") or img.get("data-src", "")
+                    if src and "/storage/products/" in src and "150x150" not in src:
+                        product_images.append(urljoin(BASE_URL, src))
 
             # Fallback: get first img with /storage/products/ that looks like main image
             if not product_images:
