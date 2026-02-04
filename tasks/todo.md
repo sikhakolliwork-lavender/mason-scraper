@@ -39,7 +39,7 @@
 - [x] Verify JSON output
 - [x] Verify CSV output
 - [x] Verify images downloaded (30 images)
-- [ ] Run full scrape (all 139 pages) - ready for user to run
+- [x] Run full scrape (all 3,318 products)
 - [x] Final commit and push
 
 ---
@@ -48,31 +48,34 @@
 
 ### Summary of Changes
 1. **Project Setup**: Created folder structure at `/Users/ss/github/mason-scraper` with Git, GitHub sync, CLAUDE.md, and task tracking
-2. **Core Scraper** (`mason_scraper.py`): ~300 lines Python script with:
-   - Page scraping with BeautifulSoup
-   - Product detail extraction (name, price, SKU, brand, category, images)
-   - Rate limiting (configurable delay between requests)
+2. **Core Scraper** (`mason_scraper.py`): ~550 lines Python script with:
+   - Sitemap-based URL extraction (3,318 products)
+   - Product detail extraction (name, price, SKU, brand, categories, tags, description, specifications, seller, availability, images)
+   - Safe mode: random delays (3-6s), User-Agent rotation, browser headers
    - Retry logic with exponential backoff
-3. **Data Export**: JSON and CSV with proper encoding for Indian Rupee prices
-4. **Image Downloads**: Async downloads with aiohttp, 10 concurrent limit
-5. **Resume Capability**: Progress saved every 5 pages, Ctrl+C handler
+3. **Data Export**: JSON and CSV with proper encoding
+4. **Image Downloads**: Async downloads with aiohttp, 3 concurrent limit, all variations (original, 800x800, 400x400)
+5. **Resume Capability**: Progress saved every 25 products, Ctrl+C handler, checkpoint exports
 
-### Test Results
-- Pages scraped: 5 (125 products)
-- Details fetched: 10 products
-- Images downloaded: 30
-- Time: ~24 seconds
-- Outputs: `output/products.json`, `output/products.csv`, `output/images/`
+### Final Scrape Results (2026-02-04)
+- **Products scraped**: 3,318
+- **Images downloaded**: 14,415 (3 sizes per product)
+- **Total time**: 7 hours 45 minutes
+- **Errors**: 0
+- **Output files**:
+  - `output/products.json` (3.7 MB)
+  - `output/products.csv` (2.1 MB)
+  - `output/images/` (14,415 files)
 
-### To Run Full Scrape
+### To Re-run Scrape
 ```bash
 cd /Users/ss/github/mason-scraper
 source venv/bin/activate
-python mason_scraper.py
+python mason_scraper.py --sitemap xml_text.txt
 ```
-Estimated time: ~2 hours for all 3,318 products
 
 ### Notes
-- Some products (steel, cement) don't have specific product images on the site
-- Image filtering prioritizes 800x800 size images
+- Some products (steel, cement) share generic images
+- All 3 image sizes saved: original, 800x800, 400x400
 - Brand extraction uses `/brands/` link pattern
+- Safe mode prevents rate limiting/blocking
